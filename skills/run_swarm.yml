@@ -1,0 +1,29 @@
+name: run_swarm
+description: Execute the full 19-step swarm orchestration (PLAN→ACT→VERIFY) for a goal.
+allowed_phases: [PLAN]
+produces: [Receipt]
+inputs_schema:
+  type: object
+  required: [run_id, goal]
+  properties:
+    run_id: {type: string}
+    goal: {type: string}
+    use_bedrock: {type: boolean}
+    max_steps: {type: integer, minimum: 1, maximum: 20}
+    max_tokens: {type: integer, minimum: 100, maximum: 2000}
+outputs_schema:
+  type: object
+  required: [ok, session_id, receipt_id]
+  properties:
+    ok: {type: boolean}
+    session_id: {type: string}
+    goal: {type: string}
+    tasks_created: {type: array, items: {type: string}}
+    tasks_verified: {type: array, items: {type: string}}
+    tasks_failed: {type: array, items: {type: string}}
+    error: {type: string}
+    receipt_id: {type: string}
+example_payload:
+  run_id: run-demo
+  goal: Build and verify an API endpoint
+  use_bedrock: false

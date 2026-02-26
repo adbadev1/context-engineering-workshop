@@ -8,7 +8,7 @@ PYTHON := $(VENV_PYTHON)
 endif
 PIP ?= $(PYTHON) -m pip
 
-.PHONY: install doctor provision smoke compile bedrock-harness workshop-scenarios gui clean
+.PHONY: install doctor provision smoke compile bedrock-harness workshop-scenarios swarm-demo gui clean
 
 install:
 	@python3 -c 'import sys; sys.exit(0) if sys.version_info >= (3, 10) else sys.exit("Python 3.10+ is required for this repo.")'
@@ -59,6 +59,16 @@ workshop-scenarios:
 	$(PYTHON) -m src.tools.workshop_scenarios \
 		--session-base "$(SESSION_BASE)" \
 		--scenario $${SCENARIO:-ALL}
+
+swarm-demo:
+	@if [ -z "$(GOAL)" ]; then echo "GOAL is required"; exit 1; fi
+	CEW_MOCK_AWS=$${CEW_MOCK_AWS:-0} $(PYTHON) -m src.tools.swarm_demo \
+		--goal "$(GOAL)" \
+		$$([ -n "$(SESSION)" ] && echo "--session $(SESSION)") \
+		$$([ "$${USE_BEDROCK:-0}" = "1" ] && echo "--use-bedrock") \
+		--max-steps $${MAX_STEPS:-6} \
+		--max-tokens $${MAX_TOKENS:-400} \
+		$$([ -n "$(OUTPUT)" ] && echo "--output $(OUTPUT)")
 
 gui:
 	npm run gui:build

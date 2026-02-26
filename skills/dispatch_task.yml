@@ -1,0 +1,26 @@
+name: dispatch_task
+description: Dispatch a task to the best worker agent based on domain keywords and workload.
+allowed_phases: [PLAN, ACT]
+produces: [Receipt]
+inputs_schema:
+  type: object
+  required: [run_id, task_id, task_description]
+  properties:
+    run_id: {type: string}
+    task_id: {type: string}
+    task_description: {type: string}
+    priority: {type: string, enum: [low, medium, high, critical]}
+outputs_schema:
+  type: object
+  required: [assigned_agent, confidence, receipt_id]
+  properties:
+    assigned_agent: {type: string}
+    confidence: {type: number}
+    rationale: {type: string}
+    task_id: {type: string}
+    receipt_id: {type: string}
+example_payload:
+  run_id: run-demo
+  task_id: task-001
+  task_description: Implement database migration for user table
+  priority: high

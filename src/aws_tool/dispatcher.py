@@ -1105,6 +1105,77 @@ def _execute_skill_impl(
             "messages": matched[:limit],
         }
 
+    # ── CC-AutoDevOps swarm skills ──────────────────────────────────
+
+    if skill == "route_to_agent":
+        from src.orchestrator.agent_router import classify_task
+
+        task_description = str(payload["task_description"]).strip()
+        assignment = classify_task(task_description)
+        return {
+            "assigned_agent": assignment.agent_id,
+            "confidence": assignment.confidence,
+            "rationale": assignment.rationale,
+            "allowed_phases": assignment.allowed_phases,
+            "model_preference": assignment.model_preference,
+            "keyword_hits": assignment.keyword_hits,
+        }
+
+    if skill == "dispatch_task":
+        from src.orchestrator.agent_router import classify_task
+
+        task_description = str(payload["task_description"]).strip()
+        task_id = str(payload["task_id"]).strip()
+        assignment = classify_task(task_description)
+        return {
+            "assigned_agent": assignment.agent_id,
+            "confidence": assignment.confidence,
+            "rationale": assignment.rationale,
+            "task_id": task_id,
+        }
+
+    if skill == "get_agent_status":
+        from src.orchestrator.agent_router import AGENT_KEYWORDS, AGENT_PHASES, AGENT_MODEL
+
+        agent_filter = str(payload.get("agent_id") or "").strip()
+        agents = []
+        for agent_id in sorted(AGENT_KEYWORDS.keys()):
+            if agent_filter and agent_id != agent_filter:
+                continue
+            agents.append({
+                "agent_id": agent_id,
+                "phases": AGENT_PHASES.get(agent_id, []),
+                "model": AGENT_MODEL.get(agent_id, "sonnet"),
+                "keyword_count": len(AGENT_KEYWORDS[agent_id]),
+                "status": "available",
+            })
+        return {"agents": agents}
+
+    if skill == "run_swarm":
+        from src.orchestrator.swarm_orchestrator import SwarmConfig, run_swarm
+
+        goal = str(payload["goal"]).strip()
+        use_bedrock = bool(payload.get("use_bedrock", False))
+        max_steps = int(payload.get("max_steps") or 6)
+        max_tokens = int(payload.get("max_tokens") or 400)
+        config = SwarmConfig(
+            goal=goal,
+            session_id=run_id,
+            use_bedrock=use_bedrock,
+            max_bedrock_steps=max_steps,
+            max_tokens=max_tokens,
+        )
+        swarm_result = run_swarm(config)
+        return {
+            "ok": swarm_result.ok,
+            "session_id": swarm_result.session_id,
+            "goal": swarm_result.goal,
+            "tasks_created": swarm_result.tasks_created,
+            "tasks_verified": swarm_result.tasks_verified,
+            "tasks_failed": swarm_result.tasks_failed,
+            "error": swarm_result.error,
+        }
+
     raise RuntimeError(f"No executor implemented for skill '{skill}'.")
 
 

@@ -1,0 +1,24 @@
+name: route_to_agent
+description: Route a task to the best-fit agent using keyword scoring (#silly/#billy/#chilly/#missy).
+allowed_phases: [PLAN]
+produces: [Receipt]
+inputs_schema:
+  type: object
+  required: [run_id, task_description]
+  properties:
+    run_id: {type: string}
+    task_description: {type: string}
+outputs_schema:
+  type: object
+  required: [assigned_agent, confidence, rationale, receipt_id]
+  properties:
+    assigned_agent: {type: string}
+    confidence: {type: number}
+    rationale: {type: string}
+    allowed_phases: {type: array, items: {type: string}}
+    model_preference: {type: string}
+    keyword_hits: {type: object}
+    receipt_id: {type: string}
+example_payload:
+  run_id: run-demo
+  task_description: Build an ML training pipeline for bedrock inference
