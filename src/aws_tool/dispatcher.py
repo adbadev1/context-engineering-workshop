@@ -444,7 +444,11 @@ def _execute_skill_impl(
                 "messages": messages,
             }
             if system_prompt:
-                body["system"] = [{"type": "text", "text": system_prompt}]
+                system_block: dict[str, Any] = {"type": "text", "text": system_prompt}
+                # Change 5: Bedrock prompt caching — mark system message as cacheable
+                if _is_truthy(os.environ.get("CEW_PROMPT_CACHE")):
+                    system_block["cache_control"] = {"type": "ephemeral"}
+                body["system"] = [system_block]
 
             response = client.invoke_model(
                 modelId=model_id,
@@ -1174,6 +1178,7 @@ def _execute_skill_impl(
             "tasks_verified": swarm_result.tasks_verified,
             "tasks_failed": swarm_result.tasks_failed,
             "error": swarm_result.error,
+            "channel_id": swarm_result.channel_id,
         }
 
     raise RuntimeError(f"No executor implemented for skill '{skill}'.")
@@ -1227,6 +1232,7 @@ def execute_skill(
     payload: dict[str, Any],
     session_id: str,
     phase: str,
+    agent_id: str = "",
 ) -> dict[str, Any]:
     resolved_skill = _normalize_skill_name(skill)
     allowlist = get_allowlisted_skills()
@@ -1237,6 +1243,17 @@ def execute_skill(
     skill_def = get_skill_definition(resolved_skill)
     validate_phase(skill_def, phase)
     validate_payload_against_schema(skill_def.get("inputs_schema", {}), payload, resolved_skill)
+
+    # Change 6: Agent-identity-gated tool rights — verify agent can execute in this phase
+    if agent_id:
+        from src.orchestrator.agent_router import AGENT_PHASES
+
+        agent_allowed = AGENT_PHASES.get(agent_id, [])
+        if agent_allowed and phase not in agent_allowed:
+            raise RuntimeError(
+                f"Agent '{agent_id}' is not permitted to execute in phase '{phase}'. "
+                f"Allowed phases: {agent_allowed}"
+            )
 
     mock_mode = _is_truthy(os.getenv("CEW_MOCK_AWS", "0"))
     graph = GraphStore(mock_mode=mock_mode)

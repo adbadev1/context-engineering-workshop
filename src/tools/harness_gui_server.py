@@ -1051,6 +1051,9 @@ class HarnessGUIHandler(BaseHTTPRequestHandler):
         if len(resource_parts) >= 1 and resource_parts[0] == "chat":
             self._handle_session_chat(session_id=session_id, resource_parts=resource_parts[1:], query=query)
             return
+        if resource_parts == ["agent-traces"]:
+            self._handle_session_agent_traces(session_id=session_id, query=query)
+            return
 
         raise APIError(
             status=HTTPStatus.NOT_FOUND,
@@ -1058,7 +1061,8 @@ class HarnessGUIHandler(BaseHTTPRequestHandler):
             message=f"Unknown session route '{path}'.",
             hint=(
                 "Use /api/session/{session_id}/graph, /api/session/{session_id}/memory, "
-                "/api/session/{session_id}/chat/threads, or /api/session/{session_id}/glass-case."
+                "/api/session/{session_id}/chat/threads, /api/session/{session_id}/agent-traces, "
+                "or /api/session/{session_id}/glass-case."
             ),
         )
 
@@ -1733,6 +1737,44 @@ class HarnessGUIHandler(BaseHTTPRequestHandler):
                 "generated_at": now_utc.isoformat(),
                 "counts": {"nodes": len(limited_nodes), "edges": len(edges)},
                 "projections": projections,
+            },
+        )
+
+    def _handle_session_agent_traces(self, *, session_id: str, query: dict[str, list[str]]) -> None:
+        """Change 7: GET /api/session/{id}/agent-traces — per-agent turn timeline."""
+        nodes, _edges = self._load_session_graph(session_id=session_id)
+
+        # Collect Decision nodes with kind=bedrock_turn, grouped by session_key
+        agent_turns: dict[str, list[dict[str, Any]]] = {}
+        for node in nodes:
+            if str(node.get("type")) != "Decision":
+                continue
+            data = _node_data(node)
+            if str(data.get("kind") or "") != "bedrock_turn":
+                continue
+            session_key = str(data.get("session_key") or "default")
+            turn_entry = {
+                "node_id": str(node.get("node_id") or ""),
+                "turn_index": _node_turn_index(node),
+                "model_id": str(data.get("model_id") or ""),
+                "phase": str(data.get("phase") or ""),
+                "prompt_preview": str(data.get("prompt") or "")[:200],
+                "response_preview": str(data.get("response") or "")[:200],
+                "ts_utc": _node_turn_timestamp(node).isoformat(),
+            }
+            agent_turns.setdefault(session_key, []).append(turn_entry)
+
+        # Sort each agent's turns by turn_index
+        for key in agent_turns:
+            agent_turns[key].sort(key=lambda t: t["turn_index"])
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "session_id": session_id,
+                "agent_count": len(agent_turns),
+                "agents": agent_turns,
             },
         )
 

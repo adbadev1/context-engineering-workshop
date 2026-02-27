@@ -90,6 +90,7 @@ class SwarmResult:
     tasks_verified: list[str] = field(default_factory=list)
     tasks_failed: list[str] = field(default_factory=list)
     error: str = ""
+    channel_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -101,6 +102,7 @@ class SwarmResult:
             "tasks_verified": self.tasks_verified,
             "tasks_failed": self.tasks_failed,
             "error": self.error,
+            "channel_id": self.channel_id,
             "completed_at": _now_utc(),
         }
 
@@ -150,6 +152,8 @@ def _step_3_6_plan_phase(
             max_steps=config.max_bedrock_steps,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
+            agent_id=assignment.agent_id,
+            role="planner",
         )
         result = run_bedrock_harness(harness_config)
         # Extract any tasks created from tool events
@@ -234,6 +238,8 @@ def _step_10_13_act_phase(
             max_steps=config.max_bedrock_steps,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
+            agent_id=worker_assignment.agent_id,
+            role="worker",
         )
         result = run_bedrock_harness(harness_config)
         return {
@@ -409,6 +415,24 @@ def run_swarm(config: SwarmConfig) -> SwarmResult:
             data={"objective_node_id": objective.get("node_id")},
         ))
 
+        # ── Change 3: Create coordination channel ──
+        channel = _run_skill(
+            session=config.session_id,
+            phase="ACT",
+            skill="create_channel",
+            payload={
+                "run_id": config.session_id,
+                "channel_name": f"swarm-coord-{config.session_id}",
+            },
+        )
+        channel_id = str(channel.get("channel_id", ""))
+        result.channel_id = channel_id
+        events.append(SwarmEvent(
+            step=step_counter, phase="INIT", agent_id="orchestrator",
+            event_type="channel_created",
+            data={"channel_id": channel_id},
+        ))
+
         # ── Step 2: Router assigns agent ──
         step_counter += 1
         assignment = _step_2_route_task(config.goal)
@@ -434,6 +458,22 @@ def run_swarm(config: SwarmConfig) -> SwarmResult:
             event_type="plan_completed",
             data={"tasks_created": result.tasks_created},
         ))
+
+        # Change 3: Planner posts plan summary to channel
+        if channel_id:
+            _run_skill(
+                session=config.session_id,
+                phase="ACT",
+                skill="post_channel_message",
+                payload={
+                    "run_id": config.session_id,
+                    "channel_id": channel_id,
+                    "agent_id": "#silly",
+                    "message": f"Plan complete. Created {len(tasks_created)} task(s): "
+                               + ", ".join(result.tasks_created),
+                    "level": "info",
+                },
+            )
 
         # ── Steps 8-14: Workers execute tasks ──
         # Re-route each task to the best worker
@@ -464,6 +504,22 @@ def run_swarm(config: SwarmConfig) -> SwarmResult:
                 },
             ))
 
+            # Change 3: Worker posts claim message to channel
+            if channel_id:
+                _run_skill(
+                    session=config.session_id,
+                    phase="ACT",
+                    skill="post_channel_message",
+                    payload={
+                        "run_id": config.session_id,
+                        "channel_id": channel_id,
+                        "agent_id": worker_assignment.agent_id,
+                        "task_id": task.get("task_id", ""),
+                        "message": f"Claiming task {task.get('task_id', '')}",
+                        "level": "info",
+                    },
+                )
+
             step_counter += 1
             act_result = _step_10_13_act_phase(
                 config.session_id, task, worker_assignment, config,
@@ -475,15 +531,53 @@ def run_swarm(config: SwarmConfig) -> SwarmResult:
                 data=act_result,
             ))
 
+            # Change 3: Worker posts completion message to channel
+            if channel_id:
+                _run_skill(
+                    session=config.session_id,
+                    phase="ACT",
+                    skill="post_channel_message",
+                    payload={
+                        "run_id": config.session_id,
+                        "channel_id": channel_id,
+                        "agent_id": worker_assignment.agent_id,
+                        "task_id": task.get("task_id", ""),
+                        "message": f"Completed task {task.get('task_id', '')}",
+                        "level": "info",
+                    },
+                )
+
             # ── Steps 15-19: Verifier checks evidence ──
             step_counter += 1
+            task_id_str = str(task.get("task_id", ""))
+
+            # Change 4: Discover artifact_uri from graph via neighbors skill
             artifact_uri = ""
-            if isinstance(act_result.get("artifact"), dict):
-                artifact_uri = str(act_result["artifact"].get("s3_uri", ""))
+            try:
+                neighbors = _run_skill(
+                    session=config.session_id,
+                    phase="VERIFY",
+                    skill="neighbors",
+                    payload={
+                        "run_id": config.session_id,
+                        "node_id": task_id_str,
+                    },
+                )
+                for neighbor in neighbors.get("neighbors", []):
+                    if str(neighbor.get("type", "")) == "Artifact":
+                        data = neighbor.get("data", {})
+                        if isinstance(data, dict):
+                            artifact_uri = str(data.get("s3_uri", ""))
+                        if artifact_uri:
+                            break
+            except Exception:
+                # Fallback: try extracting from act_result directly
+                if isinstance(act_result.get("artifact"), dict):
+                    artifact_uri = str(act_result["artifact"].get("s3_uri", ""))
 
             verify_result = _step_17_19_verify_phase(
                 config.session_id,
-                str(task.get("task_id", "")),
+                task_id_str,
                 artifact_uri,
                 config,
             )
@@ -493,10 +587,27 @@ def run_swarm(config: SwarmConfig) -> SwarmResult:
                 data=verify_result,
             ))
 
+            # Change 3: Verifier posts verification result to channel
+            if channel_id:
+                v_status = verify_result.get("overall_status", "unknown")
+                _run_skill(
+                    session=config.session_id,
+                    phase="VERIFY",
+                    skill="post_channel_message",
+                    payload={
+                        "run_id": config.session_id,
+                        "channel_id": channel_id,
+                        "agent_id": "#silly",
+                        "task_id": task_id_str,
+                        "message": f"Verification {v_status} for task {task_id_str}",
+                        "level": "info" if v_status == "pass" else "error",
+                    },
+                )
+
             if verify_result["overall_status"] == "pass":
-                result.tasks_verified.append(str(task.get("task_id", "")))
+                result.tasks_verified.append(task_id_str)
             else:
-                result.tasks_failed.append(str(task.get("task_id", "")))
+                result.tasks_failed.append(task_id_str)
 
         # Final status
         result.ok = len(result.tasks_failed) == 0 and len(result.tasks_verified) > 0

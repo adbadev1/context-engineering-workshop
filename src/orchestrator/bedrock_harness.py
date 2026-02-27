@@ -32,6 +32,8 @@ class BedrockHarnessConfig:
     max_tokens: int = 400
     temperature: float = 0.0
     include_external_stubs: bool = True
+    agent_id: str = ""
+    role: str = ""
 
 
 def _trim_for_prompt(value: Any, max_chars: int = 1200) -> str:
@@ -119,7 +121,40 @@ def _build_step_prompt(
         for spec in tool_specs
     ]
 
+    # Change 1: Agent identity recitation — prepend identity block when set
+    identity_block = ""
+    if config.agent_id:
+        allowed_phases = ", ".join(
+            __import__("src.orchestrator.agent_router", fromlist=["AGENT_PHASES"])
+            .AGENT_PHASES.get(config.agent_id, [config.phase])
+        )
+        identity_block = (
+            "<agent_identity>\n"
+            f"Agent: {config.agent_id}\n"
+            f"Role: {config.role or 'worker'}\n"
+            f"Allowed phases: {allowed_phases}\n"
+            f"Current phase: {config.phase} (you MUST stay within this phase)\n"
+            "</agent_identity>\n\n"
+        )
+
+    # Change 2: Failure feedback — scan recent events for failures
+    failure_block = ""
+    failed_events = [e for e in tool_events[-3:] if not e.get("ok", True)]
+    if failed_events:
+        failure_lines = []
+        for fe in failed_events:
+            tool = fe.get("tool_name", "unknown")
+            err = fe.get("error", "unknown error")
+            failure_lines.append(f"- {tool}: {err}")
+        failure_block = (
+            "FAILURE ALERT — The following tool calls failed recently. "
+            "Do NOT repeat the same call with the same inputs:\n"
+            + "\n".join(failure_lines) + "\n\n"
+        )
+
     return (
+        f"{identity_block}"
+        f"{failure_block}"
         "Goal:\n"
         f"{config.goal}\n\n"
         "Current phase:\n"
@@ -185,6 +220,7 @@ def run_bedrock_harness(config: BedrockHarnessConfig) -> dict[str, Any]:
         session_id=config.run_id,
         phase=config.phase,
         include_external_stubs=config.include_external_stubs,
+        agent_id=config.agent_id,
     )
     events: list[dict[str, Any]] = []
     turns: list[dict[str, Any]] = []

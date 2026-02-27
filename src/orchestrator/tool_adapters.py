@@ -33,6 +33,7 @@ class AwsToolAdapter:
     skill_name: str
     session_id: str
     phase: str
+    agent_id: str = ""
 
     def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
         return execute_skill(
@@ -40,6 +41,7 @@ class AwsToolAdapter:
             payload=payload,
             session_id=self.session_id,
             phase=self.phase,
+            agent_id=self.agent_id,
         )
 
 
@@ -112,6 +114,7 @@ def build_tool_registry(
     session_id: str,
     phase: str,
     include_external_stubs: bool = True,
+    agent_id: str = "",
 ) -> tuple[dict[str, ToolAdapter], list[ToolSpec]]:
     """Build phase-aware tool registry for the harness."""
     definitions = load_skill_definitions()
@@ -125,7 +128,9 @@ def build_tool_registry(
         allowed_phases = skill_def.get("allowed_phases") or []
         if phase not in allowed_phases:
             continue
-        registry[name] = AwsToolAdapter(skill_name=name, session_id=session_id, phase=phase)
+        registry[name] = AwsToolAdapter(
+            skill_name=name, session_id=session_id, phase=phase, agent_id=agent_id,
+        )
         specs.append(
             ToolSpec(
                 name=name,

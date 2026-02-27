@@ -1,6 +1,6 @@
 name: post_channel_message
 description: Post a typed communication update into a channel, optionally linked to a task.
-allowed_phases: [ACT]
+allowed_phases: [ACT, VERIFY]
 produces: [Receipt]
 inputs_schema:
   type: object
