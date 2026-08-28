@@ -1,0 +1,61 @@
+{
+  "ok": false,
+  "session_id": "swarm-4a4a4268b1",
+  "goal": "Build an ML training pipeline",
+  "events": [
+    {
+      "step": 1,
+      "phase": "INIT",
+      "agent_id": "human",
+      "event_type": "objective_created",
+      "data": {
+        "objective_node_id": "objective-swarm-4a4a4268b1"
+      },
+      "ts_utc": "2026-02-27T02:44:40.842908+00:00"
+    },
+    {
+      "step": 1,
+      "phase": "INIT",
+      "agent_id": "orchestrator",
+      "event_type": "channel_created",
+      "data": {
+        "channel_id": "channel-cc40a8ac34d0"
+      },
+      "ts_utc": "2026-02-27T02:44:40.853501+00:00"
+    },
+    {
+      "step": 2,
+      "phase": "ROUTE",
+      "agent_id": "router",
+      "event_type": "agent_assigned",
+      "data": {
+        "assigned_agent": "#billy",
+        "confidence": 0.6,
+        "rationale": "Matched 3/5 keywords: ml, ai, training",
+        "keyword_hits": {
+          "#silly": 0,
+          "#billy": 3,
+          "#chilly": 1,
+          "#missy": 1
+        }
+      },
+      "ts_utc": "2026-02-27T02:44:40.853528+00:00"
+    },
+    {
+      "step": 3,
+      "phase": "PLAN",
+      "agent_id": "#silly",
+      "event_type": "plan_completed",
+      "data": {
+        "tasks_created": []
+      },
+      "ts_utc": "2026-02-27T02:44:40.877474+00:00"
+    }
+  ],
+  "tasks_created": [],
+  "tasks_verified": [],
+  "tasks_failed": [],
+  "error": "",
+  "channel_id": "channel-cc40a8ac34d0",
+  "completed_at": "2026-02-27T02:44:40.900324+00:00"
+}
